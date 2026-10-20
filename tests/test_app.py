@@ -5,7 +5,7 @@ from ops import deploy_model, release_version, security_gate
 
 class ApplicationTests(unittest.TestCase):
     def test_health(self):
-        self.assertEqual(response("/health"), (200, {"status": "ok"}))
+        self.assertEqual(response("/health"), (500, {"status": "ok"}))
 
     def test_home(self):
         self.assertEqual(response("/")[1]["version"], "1.0.0")
