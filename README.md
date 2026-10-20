@@ -1,87 +1,70 @@
 # Talented DevOps - Hafta 5
 
-Ana patika: Platform & Cloud Engineering. Ek: SRE güvenlik kapısı ve rollback modeli.
-Bu paket yerel test edilmiş bir uygulama ve CI/CD tasarımıdır. Canlı GitHub Actions,
-GHCR, Docker/Trivy ve sertifikasyon modülü tamamlanmış gibi sunulmamıştır.
+**Binnur Cerit | 20 Ekim 2026**
 
-## Yerel kullanım
+Cloud Operations / Platform & Cloud Engineering patikasında, önceki Terraform
+laboratuvarımı CI kalite kontrollerine bağladım. Python servisi için çok aşamalı
+Docker build, güvenlik kapısı ve sürümlü GHCR yayını oluşturdum.
 
-Python 3.11 veya 3.12:
+## Doğrulanmış sonuçlar
 
-```sh
-python -m unittest discover -s tests -v
-python ops.py
-python ops.py gate fixtures/clean.json
-python ops.py gate fixtures/high.json  # Beklenen çıkış kodu: 1
-python app.py
-# Ayrı terminal:
-curl http://localhost:8080/health
-```
+- [Başarılı v1.0.0 çalıştırması](https://github.com/copilotbc01/talented-devops-week5/actions/runs/39465329218)
+- [Kasıtlı başarısız test dalı](https://github.com/copilotbc01/talented-devops-week5/actions/runs/39464344732)
+- [Debian imajında gerçek CVE engeli](https://github.com/copilotbc01/talented-devops-week5/actions/runs/39464774284)
+- [GHCR paket ve etiket ekranı](https://github.com/copilotbc01/talented-devops-week5/pkgs/container/talented-devops-week5)
 
-Kalite denetimi:
+Python 3.11 ve 3.12 üzerinde Flake8 ve 11 birim testi başarılıdır.
+Terraform fmt/init/validate ve gerçek container health kontrolü başarılıdır.
+İlk Debian imajındaki 44 HIGH paket-bulgu kaydı nedeniyle yayın engellendi.
+Alpine tabanına geçildikten sonra aynı güvenlik eşiğinde HIGH/CRITICAL bulunmadı.
+Tarama sonucu yalnızca çalıştırma anındaki veri tabanı ve belirtilen eşik içindir.
+
+## Yerel tekrar
 
 ```sh
 python -m pip install flake8==7.1.2
 python -m flake8 .
+python -m unittest discover -s tests -v
+python ops.py
+python ops.py gate fixtures/clean.json
+python ops.py gate fixtures/high.json
 ```
 
-## GitHub ve GHCR
-
-1. Bu klasörün içeriğini kendi GitHub depona ekle; .github klasörünü de yükle.
-2. Actions çalıştırmalarına izin ver. Paket oluşturma kurum politikasınca engelleniyorsa
-   yöneticinle görüş. GITHUB_TOKEN otomatik oluşturulur; ayrıca token dosyası ekleme.
-3. Push/PR: iki Python sürümünde lint/test, imaj derleme, smoke test ve Trivy taraması.
-4. Başarılı kontrollerden sonra sürüm oluştur:
+Son komutun çıkış kodunun 1 olması beklenir: yapay HIGH girdisini engeller.
+`ops.py` rollback kararını bellek içinde simüle eder; gerçek sunucuya dağıtım yapmaz.
 
 ```sh
-git tag v1.0.0
-git push origin v1.0.0
+docker build -t talented-week5 .
+docker run --rm -p 127.0.0.1:8080:8080 talented-week5
+# Ayrı terminal:
+curl --fail http://127.0.0.1:8080/health
 ```
 
-5. Etiket push'u bütün kontrolleri tekrar çalıştırır; yalnızca HIGH/CRITICAL yoksa,
-   taranmış imajı ghcr.io/OWNER/REPO:1.0.0 ve :sha-COMMIT etiketleriyle yayımlar.
-   OWNER/REPO workflow içinde küçük harfe dönüştürülür. Desteklenen sürümler
-   kararlı vMAJOR.MINOR.PATCH biçimindedir; ön sürüm etiketleri bilerek reddedilir.
-6. Actions logları, Trivy artifact'i ve GHCR etiket ekranını kanıt olarak kaydet.
+## İş akışı
 
-## Kasıtlı başarısız CI kanıtı
+Her push/PR: Python matrix kalite ve testleri, Terraform doğrulama,
+Docker build, container smoke testi ve gerçek Trivy taraması.
+HIGH/CRITICAL bulgular (düzeltmesi henüz olmayanlar dahil) yayın kapısını kapatır.
+PR ve dal push'larında registry login/push çalışmaz.
 
-Ayrı bir test dalında tests/test_app.py içindeki health beklentisini yanlış değiştirip
-PR aç. Test job'u kırılmalı; build-scan-publish atlanmalı. Log ekranını kaydet,
-sonra değişikliği geri al. Ana dala bilerek bozuk test birleştirme.
-Fixture HIGH testi beklenen hata kodunu doğruladığı için ana workflow'u kırmaz.
-Gerçek CVE halinde Trivy adımı workflow'u kırar ve publish çalışmaz.
+Kararlı `vMAJOR.MINOR.PATCH` tag push'u bütün kontrolleri tekrar çalıştırır;
+sonra aynı taranmış imajı sürüm ve commit etiketleriyle GHCR'a gönderir.
+İlk sürüm `v1.0.0` zaten yayımlanmıştır. Yeni sürüm için yeni etiket kullanılmalıdır.
+Ön sürüm/build metadata tag biçimleri bu uygulamada desteklenmez.
 
-## Güvenlik ve kapsam
+## Güvenlik ve sınırlar
 
-- PR'da registry login/push yok; pull_request_target kullanılmaz.
-- Çalıştırılabilir shell metnine doğrudan PR başlığı/ref ifadesi gömülmez.
-- Token yalnızca login adımına verilir; Docker ARG/ENV veya log içine yazılmaz.
-- Runtime root olmayan UID 10001 kullanır; test dosyaları final imaja girmez.
-- Bağımlılıksız uygulama için multi-stage boyut kazancı sınırlıdır.
-- Base image etiketi hareketlidir; canlı kullanımda onaylı digest sabitlenmeli.
-- Action sürümleri etiketlidir; canlı kullanımda doğrulanmış commit SHA ile sabitlenmeli.
-- packages:write build job'una verilmiştir; daha sıkı yalıtım için yayımlama ayrı,
-  korumalı environment ve onay kapısıyla yapılabilir.
-- Bu iş akışı konteyner yayımlar; üretim sunucusuna dağıtım yapmaz.
-- ops.py gerçek Docker rollback'i değildir: sağlık başarısızlığında önceki sürüme
-  dönüş kararını ve rollback hatasında eskalasyonu test eden bellek içi modeldir.
+- Token yalnızca registry login girdisinde kullanılır; Docker ARG/ENV içine yazılmaz.
+- PR'da registry login/push yoktur; pull_request_target kullanılmaz.
+- Uygulama root olmayan UID 10001 ile çalışır.
+- Trivy action referansı doğrulanmış commit SHA'ya sabittir. Diğer action tag'leri ve
+  base image etiketi canlı kullanımda ayrıca onaylı SHA/digest ile sabitlenmelidir.
+- packages:write yalnızca imaj job'unda tanımlıdır.
+- Bu iş akışı imaj yayımlar; üretim sunucusuna deployment yapmaz.
+- Rollback bir karar modeli olarak test edilmiştir.
+- previous-week4/terraform önceki kaynakları içerir. Yeni pipeline Terraform apply
+  veya LocalStack entegrasyonu çalıştırmaz.
 
-## Göndermeden önce kalan kişisel kanıtlar
-
-PDF ve ZIP dosya adları önceki teslimlerdeki BinnurCerit adına göre belirlenmiştir.
-Hafta 3'te seçtiğin gerçek sertifikasyon patikasının modül 3 ekran görüntülerini,
-lab sonuçlarını ve gerçek ilerleme oranını ekle. Paketteki AWS özeti örnek çalışma
-notudur; bir kursu tamamladığını veya bir sınavı geçtiğini kanıtlamaz.
-
-## Önceki çalışmalarla devamlılık
-Hafta 3/4 Platform & Cloud Engineering seçimi ve AWS Solutions Architect - Associate
-çalışma hedefi korunmuştur. previous-week4 klasörü önceki arşivden alınan Terraform
-kaynaklarını ve açıkça tarihlenmiş geçmiş kanıtları içerir. CI bu kaynaklara fmt/init/validate
-uygular; Terraform apply ve LocalStack entegrasyonu bu yeni workflow içinde çalıştırılmaz.
-
-## Önceki çalışmalarla devamlılık
-Hafta 3/4 Platform & Cloud Engineering seçimi ve AWS Solutions Architect - Associate
-çalışma hedefi korunmuştur. previous-week4 klasörü önceki arşivden alınan Terraform
-kaynaklarını ve açıkça tarihlenmiş geçmiş kanıtları içerir. CI bu kaynaklara fmt/init/validate
-uygular; Terraform apply ve LocalStack entegrasyonu bu yeni workflow içinde çalıştırılmaz.
+Teknik teslim ZIP'inde PDF, tarihli ekran görüntüleri, tam CI logları,
+Trivy JSON raporları ve SHA256 manifesti bulunur. Geçmiş hafta kanıtları
+previous-week4/evidence altında ayrı tutulur; yeni haftanın kanıtı olarak sunulmaz.
